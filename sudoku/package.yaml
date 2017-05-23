@@ -1,0 +1,9 @@
+name: sudoku-solver
+
+dependencies:
+  - base
+  - containers
+
+library:
+  exposed-modules: SudokuSolver
+  source-dirs: src
