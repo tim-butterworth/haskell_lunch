@@ -1,7 +1,7 @@
 module SudokuSolver (Board, Entry(..), Row, Column, solve) where
 
 import Data.Map (Map, fromList, toList, empty, lookup, keys, insert)
-import Data.List (find)
+import Data.List (find, sortBy)
 
 data Entry = V Int
            | Empty
@@ -88,10 +88,37 @@ doMoves optionMap = applyAllTheMoves optionMap (nextOption optionMap)
 toBoard :: Map Coordinate (Entry, [Int]) -> Board
 toBoard mp = Board (foldr (\c b -> (getEntries c mp):b) [] [0..8])
   where getEntries c mp = foldr (\r b -> (getEntry (maybeUnwrap (Data.Map.lookup (toCoordinate (r, c)) mp))):b) [] [0..8]
-        getEntry (e, [v]) = e
+        getEntry (e, v) = e
+
+getChoices :: Map Coordinate (Entry, [Int]) -> [(Coordinate, (Entry, [Int]))]
+getChoices mp = sortBy shortListFirst (filter isEmpty (Data.Map.toList mp))
+  where isEmpty (c, (Empty, vals)) = True
+        isEmpty _ = False
+        shortListFirst (_, (_, lstc)) (_, (_, lstd)) = compare (length lstc) (length lstd)
+
+solveAmbiguous :: [(Map Coordinate (Entry, [Int]), [(Coordinate, (Entry, [Int]))])] -> Map Coordinate (Entry, [Int])
+solveAmbiguous [(mp, [])] = mp
+solveAmbiguous lst =
+  let next = nextGeneration lst
+      maybeSolution = Data.List.find (\(mp, lst) -> (length lst) == 0) next
+  in if (maybeSolution == Nothing)
+     then solveAmbiguous next
+     else fst (maybeUnwrap maybeSolution)
+
+nextGeneration :: [(Map Coordinate (Entry, [Int]), [(Coordinate, (Entry, [Int]))])] -> [(Map Coordinate (Entry, [Int]), [(Coordinate, (Entry, [Int]))])]
+nextGeneration lst = filter emptyFirstChoices (foldr (++) [] (map applyChoices lst))
+  where emptyFirstChoices (mp, ((c, (e, [])):xs)) = False
+        emptyFirstChoices _ = True
+
+applyChoices :: (Map Coordinate (Entry, [Int]), [(Coordinate, (Entry, [Int]))]) -> [(Map Coordinate (Entry, [Int]), [(Coordinate, (Entry, [Int]))])]
+applyChoices (mp, (coor, (e, vs)):cs) = map (\new_mp -> (new_mp, (getChoices new_mp))) (map (\v -> (doMoves (applyRestriction mp coor v (maybeUnwrap (Data.Map.lookup coor (partitions)))))) vs)
+applyChoices (mp, []) = [(mp, [])]
 
 solve :: Board -> Board
-solve b = toBoard (doMoves (initialize (convertToSolvable b)))
+solve b =
+  let simplified = (doMoves (initialize (convertToSolvable b)))
+      choices = getChoices simplified
+  in toBoard (solveAmbiguous [(simplified, choices)])
 
 -- Sample boards --
 toEntry :: Int -> Entry
@@ -110,6 +137,18 @@ sampleBoard = Board
   ,[4, 0, 1,   0, 0, 0,   6, 8, 0]
   ,[5, 6, 0,   9, 0, 1,   0, 2, 0]])
 
+-- [
+--   [V 1,V 3,V 9,V 2,V 5,V 7,V 4,V 6,V 8],
+--   [V 8,V 4,V 7,V 1,V 6,V 3,V 5,V 9,V 2],
+--   [V 2,V 5,V 6,V 4,V 9,V 8,V 7,V 3,V 1],
+--   [V 6,V 9,V 4,V 3,V 8,V 5,V 2,V 1,V 7],
+--   [V 3,V 8,V 2,V 7,V 1,V 4,V 9,V 5,V 6],
+--   [V 7,V 1,V 5,V 6,V 2,V 9,V 8,V 4,V 3],
+--   [V 9,V 2,V 3,V 8,V 4,V 6,V 1,V 7,V 5],
+--   [V 4,V 7,V 1,V 5,V 3,V 2,V 6,V 8,V 9],
+--   [V 5,V 6,V 8,V 9,V 7,V 1,V 3,V 2,V 4]
+-- ]
+
 sampleBoard2 = Board 
  (map (\column -> map toEntry column)
   [[3, 1, 0,   2, 0, 0,   0, 0, 5]
@@ -122,12 +161,63 @@ sampleBoard2 = Board
   ,[0, 6, 0,   0, 0, 8,   1, 7, 3]
   ,[5, 0, 0,   7, 6, 0,   0, 0, 8]])
 
---[[V 1,V 3,V 9,V 2,V 5,V 7,V 4,V 6,V 8],
--- [V 8,V 4,V 7,V 1,V 6,V 3,V 5,V 9,V 2],
--- [V 2,V 5,V 6,V 4,V 9,V 8,V 7,V 3,V 1],
--- [V 6,V 9,V 4,V 3,V 8,V 5,V 2,V 1,V 7],
--- [V 3,V 8,V 2,V 7,V 1,V 4,V 9,V 5,V 6],
--- [V 7,V 1,V 5,V 6,V 2,V 9,V 8,V 4,V 3],
--- [V 9,V 2,V 3,V 8,V 4,V 6,V 1,V 7,V 5],
--- [V 4,V 7,V 1,V 5,V 3,V 2,V 6,V 8,V 9],
--- [V 5,V 6,V 8,V 9,V 7,V 1,V 3,V 2,V 4]]
+-- [
+--   [V 3,V 1,V 6,V 2,V 8,V 9,V 7,V 4,V 5],
+--   [V 9,V 7,V 2,V 4,V 3,V 5,V 8,V 6,V 1],
+--   [V 8,V 4,V 5,V 1,V 7,V 6,V 3,V 2,V 9],
+--   [V 1,V 5,V 8,V 6,V 4,V 2,V 9,V 3,V 7],
+--   [V 4,V 2,V 3,V 8,V 9,V 7,V 5,V 1,V 6],
+--   [V 6,V 9,V 7,V 5,V 1,V 3,V 4,V 8,V 2],
+--   [V 7,V 8,V 9,V 3,V 2,V 1,V 6,V 5,V 4],
+--   [V 2,V 6,V 4,V 9,V 5,V 8,V 1,V 7,V 3],
+--   [V 5,V 3,V 1,V 7,V 6,V 4,V 2,V 9,V 8]
+-- ]
+
+sampleBoardTricky = Board
+  (map (\column -> map toEntry column)
+   [[0, 0, 0,   8, 0, 1,   0, 0, 0]
+   ,[0, 0, 0,   0, 0, 0,   0, 4, 3]
+   ,[5, 0, 0,   0, 0, 0,   0, 0, 0]
+   ,[0, 0, 0,   0, 7, 0,   8, 0, 0]
+   ,[0, 0, 0,   0, 0, 0,   1, 0, 0]
+   ,[0, 2, 0,   0, 3, 0,   0, 0, 0]
+   ,[6, 0, 0,   0, 0, 0,   0, 7, 5]
+   ,[0, 0, 3,   4, 0, 0,   0, 0, 0]
+   ,[0, 0, 0,   2, 0, 0,   6, 0, 0]])
+
+-- [
+--   [V 2,V 3,V 7,V 8,V 4,V 1,V 5,V 6,V 9],
+--   [V 1,V 8,V 6,V 7,V 9,V 5,V 2,V 4,V 3],
+--   [V 5,V 9,V 4,V 3,V 2,V 6,V 7,V 1,V 8],
+--   [V 3,V 1,V 5,V 6,V 7,V 4,V 8,V 9,V 2],
+--   [V 4,V 6,V 9,V 5,V 8,V 2,V 1,V 3,V 7],
+--   [V 7,V 2,V 8,V 1,V 3,V 9,V 4,V 5,V 6],
+--   [V 6,V 4,V 2,V 9,V 1,V 8,V 3,V 7,V 5],
+--   [V 8,V 5,V 3,V 4,V 6,V 7,V 9,V 2,V 1],
+--   [V 9,V 7,V 1,V 2,V 5,V 3,V 6,V 8,V 4]
+-- ]
+
+
+sampleBoardLessTricky = Board
+  (map (\column -> map toEntry column)
+   [[8, 0, 0,  0, 0, 0,  0, 0, 0]
+   ,[0, 0, 3,  6, 0, 0,  0, 0, 0]
+   ,[0, 7, 0,  0, 9, 0,  2, 0, 0]
+   ,[0, 5, 0,  0, 0, 7,  0, 0, 0]
+   ,[0, 0, 0,  0, 4, 5,  7, 0, 0]
+   ,[0, 0, 0,  1, 0, 0,  0, 3, 0]
+   ,[0, 0, 1,  0, 0, 0,  0, 6, 8]
+   ,[0, 0, 8,  5, 0, 0,  0, 1, 0]
+   ,[0, 9, 0,  0, 0, 0,  4, 0, 0]])
+
+-- [
+--   [V 8,V 1,V 2,V 7,V 5,V 3,V 6,V 4,V 9],
+--   [V 9,V 4,V 3,V 6,V 8,V 2,V 1,V 7,V 5],
+--   [V 6,V 7,V 5,V 4,V 9,V 1,V 2,V 8,V 3],
+--   [V 1,V 5,V 4,V 2,V 3,V 7,V 8,V 9,V 6],
+--   [V 3,V 6,V 9,V 8,V 4,V 5,V 7,V 2,V 1],
+--   [V 2,V 8,V 7,V 1,V 6,V 9,V 5,V 3,V 4],
+--   [V 5,V 2,V 1,V 9,V 7,V 4,V 3,V 6,V 8],
+--   [V 4,V 3,V 8,V 5,V 2,V 6,V 9,V 1,V 7],
+--   [V 7,V 9,V 6,V 3,V 1,V 8,V 4,V 5,V 2]
+-- ]
