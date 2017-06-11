@@ -3,12 +3,11 @@ module SudokuSolver (Board, Entry(..), Row, Column, solve) where
 import Data.Map (Map, fromList, toList, empty, lookup, keys, insert)
 import Data.List (find, sortBy)
 
-data Entry = V Int
-           | Empty
-             deriving (Show, Eq)
+data Entry = V Int | Empty
+  deriving (Show, Eq)
 
 data Board = Board [[Entry]]
-  deriving (Show)
+  deriving (Show, Eq)
 
 data Row = Row Int
   deriving (Show, Eq, Ord)
@@ -19,8 +18,14 @@ data Column = Column Int
 data Coordinate = Coordinate Row Column
   deriving (Show, Eq, Ord)
 
+data Move = Move (Coordinate, Int)
+  deriving (Show)
+
 toCoordinate :: (Int, Int) -> Coordinate
 toCoordinate (row, column) = Coordinate (Row row) (Column column)
+
+toMove :: Coordinate -> Int -> Move
+toMove c v = Move (c, v)
 
 getColumn :: Int -> [Coordinate]
 getColumn c = map toCoordinate (zip [0..8] (repeat c))
@@ -33,16 +38,11 @@ getSection row column =
   let makeArray n = [(3*n)..((3*n) + 2)]
       rowValues = makeArray (div row 3)
       columnValues = makeArray (div column 3)
-  in map (\(r, c) -> Coordinate (Row r) (Column c)) [(r,c) | r <- rowValues, c <- columnValues]
+  in map toCoordinate [(r,c) | r <- rowValues, c <- columnValues]
 
-squash :: [[Entry]] -> [(Coordinate, (Entry, [Int]))] -> Int -> [(Coordinate, (Entry, [Int]))]
-squash [] accume _ = accume
-squash (c:cs) accume column = squash cs (accume ++ (sectionize c column)) (column + 1)
-  where sectionize entries column = zip (map toCoordinate (zip [0..8] (repeat column))) (zip entries (repeat [1..9]))
+initial :: Map Coordinate (Entry, [Int])
+initial = fromList (zip (map toCoordinate [(x,y) | x <- [0..8], y <- [0..8]]) (repeat (Empty, [1..9])))
 
-convertToSolvable :: Board -> Map Coordinate (Entry, [Int])
-convertToSolvable (Board grid) = fromList (squash grid [] 0)
-        
 partitions :: Map Coordinate [Coordinate]
 partitions =
   let coordinates = [(x,y) | x <- [0..8], y <- [0..8]]
@@ -54,36 +54,8 @@ removeOption :: Int -> Maybe (Entry, [Int]) -> (Entry, [Int])
 removeOption _ (Just (V v, lst)) = (V v, lst)
 removeOption r (Just (Empty, lst)) = (Empty, (filter (r/=) lst))
 
-applyRestriction :: Map Coordinate (Entry, [Int]) -> Coordinate -> Int -> [Coordinate] -> Map Coordinate (Entry, [Int])
-applyRestriction mp coordinate v [] = insert coordinate (V v, [v]) mp
-applyRestriction mp coordinate v (p:ps) = applyRestriction (insert p (removeOption v (Data.Map.lookup p mp)) mp) coordinate v ps
-
 maybeUnwrap :: Maybe a -> a
 maybeUnwrap (Just a) = a
-  
-initializeCell :: Coordinate -> Maybe (Entry, [Int]) -> Map Coordinate (Entry, [Int]) -> Map Coordinate (Entry, [Int])
-initializeCell coordinate (Just (Empty, _)) mp = mp
-initializeCell coordinate (Just (V n, entries)) mp = applyRestriction mp coordinate n (maybeUnwrap (Data.Map.lookup coordinate (partitions)))
-
-initializeByCells :: [Coordinate] -> Map Coordinate (Entry, [Int]) -> Map Coordinate (Entry, [Int])
-initializeByCells [] mp = mp
-initializeByCells (c:cs) mp = initializeByCells cs (initializeCell c (Data.Map.lookup c mp) mp)
-
-initialize :: Map Coordinate (Entry, [Int]) -> Map Coordinate (Entry, [Int])
-initialize mp =
-  let cells = keys mp
-  in initializeByCells cells mp
-
-nextOption :: Foldable t => Map t1 (Entry, t a) -> Maybe (t1, (Entry, t a))
-nextOption optionMap = find isFullyQualified (Data.Map.toList optionMap)
-  where isFullyQualified (c, (v, lst)) = ((length lst) == 1) && (v == Empty)
-
-doMoves :: Map Coordinate (Entry, [Int]) -> Map Coordinate (Entry, [Int])
-doMoves optionMap = applyAllTheMoves optionMap (nextOption optionMap)
-  where applyAllTheMoves mp Nothing = mp
-        applyAllTheMoves mp (Just (c, (e, [v]))) =
-          let nextMap = (applyRestriction mp c v (maybeUnwrap (Data.Map.lookup c (partitions))))
-          in applyAllTheMoves nextMap (nextOption nextMap)
 
 toBoard :: Map Coordinate (Entry, [Int]) -> Board
 toBoard mp = Board (foldr (\c b -> (getEntries c mp):b) [] [0..8])
@@ -96,29 +68,68 @@ getChoices mp = sortBy shortListFirst (filter isEmpty (Data.Map.toList mp))
         isEmpty _ = False
         shortListFirst (_, (_, lstc)) (_, (_, lstd)) = compare (length lstc) (length lstd)
 
-solveAmbiguous :: [(Map Coordinate (Entry, [Int]), [(Coordinate, (Entry, [Int]))])] -> Map Coordinate (Entry, [Int])
-solveAmbiguous [(mp, [])] = mp
-solveAmbiguous lst =
-  let next = nextGeneration lst
-      maybeSolution = Data.List.find (\(mp, lst) -> (length lst) == 0) next
-  in if (maybeSolution == Nothing)
-     then solveAmbiguous next
-     else fst (maybeUnwrap maybeSolution)
+convertBoardToMoves :: Board -> [Move]
+convertBoardToMoves (Board b) = traverseBoard 0 b []
+  where traverseBoard rIndex (c:cs) accume = traverseBoard (rIndex+1) cs (accume ++ (traverseColumn rIndex 0 c []))
+        traverseBoard _ [] accume = accume
+        traverseColumn rIndex cIndex (e:es) accume | (e == Empty) = traverseColumn rIndex (cIndex+1) es accume
+                                                   | otherwise = traverseColumn rIndex (cIndex+1) es ((createMove rIndex cIndex e) : accume)
+        traverseColumn _ _ [] accume = accume
+        createMove rIndex cIndex e = Move ((toCoordinate (cIndex, rIndex)), (valueOf e))
+        valueOf (V v) = v
 
-nextGeneration :: [(Map Coordinate (Entry, [Int]), [(Coordinate, (Entry, [Int]))])] -> [(Map Coordinate (Entry, [Int]), [(Coordinate, (Entry, [Int]))])]
-nextGeneration lst = filter emptyFirstChoices (foldr (++) [] (map applyChoices lst))
-  where emptyFirstChoices (mp, ((c, (e, [])):xs)) = False
-        emptyFirstChoices _ = True
+applyRestrictions :: Map Coordinate (Entry, [Int]) -> Int -> [Coordinate] -> Map Coordinate (Entry, [Int])
+applyRestrictions mp _ [] = mp
+applyRestrictions mp v (p:ps) = applyRestrictions (insert p (removeOption v (Data.Map.lookup p mp)) mp) v ps
 
-applyChoices :: (Map Coordinate (Entry, [Int]), [(Coordinate, (Entry, [Int]))]) -> [(Map Coordinate (Entry, [Int]), [(Coordinate, (Entry, [Int]))])]
-applyChoices (mp, (coor, (e, vs)):cs) = map (\new_mp -> (new_mp, (getChoices new_mp))) (map (\v -> (doMoves (applyRestriction mp coor v (maybeUnwrap (Data.Map.lookup coor (partitions)))))) vs)
-applyChoices (mp, []) = [(mp, [])]
+toMoves :: (Coordinate, (Entry, [Int])) -> [Move]
+toMoves (c, (_, lst)) = map (toMove c) lst
+
+fullySpecified :: (Coordinate, (Entry, [Int])) -> Bool
+fullySpecified (c, (Empty, [a])) = True
+fullySpecified _ = False
+
+getFullySpecifiedMove :: Map Coordinate (Entry, [Int]) -> Maybe Move
+getFullySpecifiedMove mp = fmap (head.toMoves) (find fullySpecified (toList mp))
+
+cascade :: Map Coordinate (Entry, [Int]) -> Map Coordinate (Entry, [Int])
+cascade mp = doCascade mp (getFullySpecifiedMove mp)
+  where doCascade mp (Just move) = cascade (applyMove mp move)
+        doCascade mp Nothing = mp
+
+applyMove :: (Map Coordinate (Entry, [Int])) -> Move -> (Map Coordinate (Entry, [Int]))
+applyMove state (Move (c, v)) = (updateMap state c v)
+  where updateMap state c v = ((applyRestrictions (insert c (V v, [v]) state) v) (maybeUnwrap (Data.Map.lookup c partitions)))
+
+applyMoves :: Map Coordinate (Entry, [Int]) -> [Move] -> Map Coordinate (Entry, [Int])
+applyMoves mp = foldr (flip applyMove) mp
+
+applyBoardDefinition :: Board -> (Map Coordinate (Entry, [Int]))
+applyBoardDefinition = (applyMoves (initial)).convertBoardToMoves
+
+nextMoves :: Map Coordinate (Entry, [Int]) -> [Move]
+nextMoves = toMoves.head.getChoices
+
+nextGeneration :: [Map Coordinate (Entry, [Int])] -> [Map Coordinate (Entry, [Int])]
+nextGeneration [] = []
+nextGeneration (m:ms) = (map (cascade.(applyMove m)) (nextMoves m)) ++ (nextGeneration ms)
+
+solved :: Map Coordinate (Entry, [Int]) -> Bool
+solved m = 0 == (length (getChoices m))
+
+applyGuesses :: Map Coordinate (Entry, [Int]) -> Map Coordinate (Entry, [Int])
+applyGuesses m = breadthFirstSearch [m]
+  where breadthFirstSearch lst =
+          let maybeSolution = find solved lst
+          in if (not (Nothing == maybeSolution))
+             then (maybeUnwrap maybeSolution)
+             else breadthFirstSearch (nextGeneration lst)
+
+arrayWrap :: a -> [a]
+arrayWrap v = [v]
 
 solve :: Board -> Board
-solve b =
-  let simplified = (doMoves (initialize (convertToSolvable b)))
-      choices = getChoices simplified
-  in toBoard (solveAmbiguous [(simplified, choices)])
+solve = toBoard.applyGuesses.applyBoardDefinition
 
 -- Sample boards --
 toEntry :: Int -> Entry
@@ -138,15 +149,15 @@ sampleBoard = Board
   ,[5, 6, 0,   9, 0, 1,   0, 2, 0]])
 
 -- [
---   [V 1,V 3,V 9,V 2,V 5,V 7,V 4,V 6,V 8],
---   [V 8,V 4,V 7,V 1,V 6,V 3,V 5,V 9,V 2],
---   [V 2,V 5,V 6,V 4,V 9,V 8,V 7,V 3,V 1],
---   [V 6,V 9,V 4,V 3,V 8,V 5,V 2,V 1,V 7],
---   [V 3,V 8,V 2,V 7,V 1,V 4,V 9,V 5,V 6],
---   [V 7,V 1,V 5,V 6,V 2,V 9,V 8,V 4,V 3],
---   [V 9,V 2,V 3,V 8,V 4,V 6,V 1,V 7,V 5],
---   [V 4,V 7,V 1,V 5,V 3,V 2,V 6,V 8,V 9],
---   [V 5,V 6,V 8,V 9,V 7,V 1,V 3,V 2,V 4]
+--    [1,3,9,2,5,7,4,6,8]
+--   ,[8,4,7,1,6,3,5,9,2]
+--   ,[2,5,6,4,9,8,7,3,1]
+--   ,[6,9,4,3,8,5,2,1,7]
+--   ,[3,8,2,7,1,4,9,5,6]
+--   ,[7,1,5,6,2,9,8,4,3]
+--   ,[9,2,3,8,4,6,1,7,5]
+--   ,[4,7,1,5,3,2,6,8,9]
+--   ,[5,6,8,9,7,1,3,2,4]
 -- ]
 
 sampleBoard2 = Board 
@@ -162,15 +173,15 @@ sampleBoard2 = Board
   ,[5, 0, 0,   7, 6, 0,   0, 0, 8]])
 
 -- [
---   [V 3,V 1,V 6,V 2,V 8,V 9,V 7,V 4,V 5],
---   [V 9,V 7,V 2,V 4,V 3,V 5,V 8,V 6,V 1],
---   [V 8,V 4,V 5,V 1,V 7,V 6,V 3,V 2,V 9],
---   [V 1,V 5,V 8,V 6,V 4,V 2,V 9,V 3,V 7],
---   [V 4,V 2,V 3,V 8,V 9,V 7,V 5,V 1,V 6],
---   [V 6,V 9,V 7,V 5,V 1,V 3,V 4,V 8,V 2],
---   [V 7,V 8,V 9,V 3,V 2,V 1,V 6,V 5,V 4],
---   [V 2,V 6,V 4,V 9,V 5,V 8,V 1,V 7,V 3],
---   [V 5,V 3,V 1,V 7,V 6,V 4,V 2,V 9,V 8]
+--    [3,1,6,2,8,9,7,4,5]
+--   ,[9,7,2,4,3,5,8,6,1]
+--   ,[8,4,5,1,7,6,3,2,9]
+--   ,[1,5,8,6,4,2,9,3,7]
+--   ,[4,2,3,8,9,7,5,1,6]
+--   ,[6,9,7,5,1,3,4,8,2]
+--   ,[7,8,9,3,2,1,6,5,4]
+--   ,[2,6,4,9,5,8,1,7,3]
+--   ,[5,3,1,7,6,4,2,9,8]
 -- ]
 
 sampleBoardTricky = Board
@@ -186,17 +197,18 @@ sampleBoardTricky = Board
    ,[0, 0, 0,   2, 0, 0,   6, 0, 0]])
 
 -- [
---   [V 2,V 3,V 7,V 8,V 4,V 1,V 5,V 6,V 9],
---   [V 1,V 8,V 6,V 7,V 9,V 5,V 2,V 4,V 3],
---   [V 5,V 9,V 4,V 3,V 2,V 6,V 7,V 1,V 8],
---   [V 3,V 1,V 5,V 6,V 7,V 4,V 8,V 9,V 2],
---   [V 4,V 6,V 9,V 5,V 8,V 2,V 1,V 3,V 7],
---   [V 7,V 2,V 8,V 1,V 3,V 9,V 4,V 5,V 6],
---   [V 6,V 4,V 2,V 9,V 1,V 8,V 3,V 7,V 5],
---   [V 8,V 5,V 3,V 4,V 6,V 7,V 9,V 2,V 1],
---   [V 9,V 7,V 1,V 2,V 5,V 3,V 6,V 8,V 4]
--- ]
+--   [2,3,7, 8,4,1, 5,6,9]
+--  ,[1,8,6, 7,9,5, 2,4,3]
+--  ,[5,9,4, 3,2,6, 7,1,8]
 
+--  ,[3,1,5, 6,7,4, 8,9,2]
+--  ,[4,6,9, 5,8,2, 1,3,7]
+--  ,[7,2,8, 1,3,9, 4,5,6]
+
+--  ,[6,4,2, 9,1,8, 3,7,5]
+--  ,[8,5,3, 4,6,7, 9,2,1]
+--  ,[9,7,1, 2,5,3, 6,8,4]
+-- ]
 
 sampleBoardLessTricky = Board
   (map (\column -> map toEntry column)
@@ -211,13 +223,15 @@ sampleBoardLessTricky = Board
    ,[0, 9, 0,  0, 0, 0,  4, 0, 0]])
 
 -- [
---   [V 8,V 1,V 2,V 7,V 5,V 3,V 6,V 4,V 9],
---   [V 9,V 4,V 3,V 6,V 8,V 2,V 1,V 7,V 5],
---   [V 6,V 7,V 5,V 4,V 9,V 1,V 2,V 8,V 3],
---   [V 1,V 5,V 4,V 2,V 3,V 7,V 8,V 9,V 6],
---   [V 3,V 6,V 9,V 8,V 4,V 5,V 7,V 2,V 1],
---   [V 2,V 8,V 7,V 1,V 6,V 9,V 5,V 3,V 4],
---   [V 5,V 2,V 1,V 9,V 7,V 4,V 3,V 6,V 8],
---   [V 4,V 3,V 8,V 5,V 2,V 6,V 9,V 1,V 7],
---   [V 7,V 9,V 6,V 3,V 1,V 8,V 4,V 5,V 2]
+--    [8,1,2, 7,5,3, 6,4,9]
+--   ,[9,4,3, 6,8,2, 1,7,5]
+--   ,[6,7,5, 4,9,1, 2,8,3]
+
+--   ,[1,5,4, 2,3,7, 8,9,6]
+--   ,[3,6,9, 8,4,5, 7,2,1]
+--   ,[2,8,7, 1,6,9, 5,3,4]
+
+--   ,[5,2,1, 9,7,4, 3,6,8]
+--   ,[4,3,8, 5,2,6, 9,1,7]
+--   ,[7,9,6, 3,1,8, 4,5,2]
 -- ]
