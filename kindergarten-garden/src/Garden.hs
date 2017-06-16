@@ -7,6 +7,7 @@ module Garden
 
 import Data.Map (Map, empty, fromList, lookup)
 import Data.Maybe (fromMaybe, catMaybes)
+import Data.List (sort)
 
 data Plant = Clover
            | Grass
@@ -20,13 +21,31 @@ plantToPlant 'G' = Grass
 plantToPlant 'R' = Radishes
 plantToPlant 'V' = Violets
 
+students = ["Alice", "Bob", "Charlie", "David", "Eve", "Fred", "Ginny", "Harriet", "Ileana", "Joseph", "Kincaid", "Larry"]
+
 defaultGarden :: String -> Map String [Plant]
-defaultGarden plants = garden ["Alice"] plants
+defaultGarden plants = garden students plants
+
+chop :: [a] -> (Int, Int) -> [[a]] -> [[a]]
+chop [] _ accume = accume
+chop lst (v, max) [] = chop lst (v,max) [[]]
+chop (x:xs) (v, max) accume | (v == max) = chop (x:xs) (0, max) (accume ++ [[]])
+                            | otherwise = chop xs ((v+1), max) ((init accume) ++ [((last accume) ++ [x])])
+
+partition :: Int -> [a] -> [[a]]
+partition n lst = chop lst (0, n) []
+
+mergeRowPartitions :: Foldable t => t [[a]] -> [[a]]
+mergeRowPartitions lst = foldr smoosh (repeat []) lst
+  where joinListTuple (a,b) = b++a
+        smoosh accume lst = (map joinListTuple) (zip lst accume)
+
+chopUpGardenString :: [Char] -> [[Char]]
+chopUpGardenString plants = (mergeRowPartitions (map (partition 2) (lines plants)))
 
 garden :: [String] -> String -> Map String [Plant]
-garden students plants = fromList [("Alice", rows plants)]
-  where rows plants
-
+garden students plants = fromList (zip (sort students) ((toPlants.chopUpGardenString) plants))
+  where toPlants lst = map (map plantToPlant) lst
 
 lookupPlants :: String -> Map String [Plant] -> [Plant]
-lookupPlants student garden = fromMaybe [] (Data.Map.lookup student garden)
+lookupPlants student garden = (fromMaybe [] (Data.Map.lookup student garden))
