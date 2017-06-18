@@ -23,6 +23,9 @@ plantToPlant 'V' = Violets
 
 students = ["Alice", "Bob", "Charlie", "David", "Eve", "Fred", "Ginny", "Harriet", "Ileana", "Joseph", "Kincaid", "Larry"]
 
+mapLookup :: Ord k => k -> Map k b -> Maybe b
+mapLookup k mp = Data.Map.lookup k mp
+
 defaultGarden :: String -> Map String [Plant]
 defaultGarden plants = garden students plants
 
@@ -48,4 +51,5 @@ garden students plants = fromList (zip (sort students) ((toPlants.chopUpGardenSt
   where toPlants lst = map (map plantToPlant) lst
 
 lookupPlants :: String -> Map String [Plant] -> [Plant]
-lookupPlants student garden = (fromMaybe [] (Data.Map.lookup student garden))
+lookupPlants student garden = (fromMaybe [] (mapLookup student garden))
+
