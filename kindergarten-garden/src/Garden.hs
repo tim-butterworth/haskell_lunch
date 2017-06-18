@@ -51,7 +51,7 @@ garden students plants = fromList (zip (sort students) ((toPlants.chopUpGardenSt
   where toPlants lst = map (map plantToPlant) lst
 
 lookupPlants :: String -> Map String [Plant] -> [Plant]
-lookupPlants student = comp (fromMaybe []) (mapLookup student)
+lookupPlants = comp (comp (fromMaybe [])) (mapLookup)
 
 comp :: (c -> b) -> (a -> c) -> a -> b
 comp f g v = f (g v)
