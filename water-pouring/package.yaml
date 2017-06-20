@@ -1,0 +1,9 @@
+name: water-pouring
+
+dependencies:
+  - base
+  - containers
+
+library:
+  exposed-modules: WaterPouring
+  source-dirs: src
