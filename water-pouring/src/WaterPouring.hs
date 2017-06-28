@@ -31,7 +31,7 @@ solved target state = elem target (elems state)
 
 possibleMoves = [(Fill 5), (Fill 3), (Empty 5), (Empty 3), (Pour 5 3), (Pour 3 5)]
 
-possibilities :: ((Map Int Int), [Move]) -> Set (Map Int Int) -> [((Map Int Int), [Move])]
+possibilities :: ((Map Int Int), [Move]) -> [((Map Int Int), [Move])]
 possibilities (state, movesSoFar) = map (\move -> ((delta state move), movesSoFar++[move])) possibleMoves
 
 
