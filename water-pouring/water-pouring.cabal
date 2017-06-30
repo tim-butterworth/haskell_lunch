@@ -3,7 +3,7 @@
 -- see: https://github.com/sol/hpack
 
 name:           water-pouring
-version:        0.0.0
+version:        0.1.0.1
 build-type:     Simple
 cabal-version:  >= 1.10
 
@@ -17,4 +17,15 @@ library
       WaterPouring
   other-modules:
       Paths_water_pouring
+  default-language: Haskell2010
+
+test-suite test
+  type: exitcode-stdio-1.0
+  main-is: Tests.hs
+  hs-source-dirs:
+      test
+  build-depends:
+      base
+    , water-pouring
+    , hspec
   default-language: Haskell2010

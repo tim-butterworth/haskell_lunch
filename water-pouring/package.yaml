@@ -1,9 +1,19 @@
 name: water-pouring
+version: 0.1.0.1
 
 dependencies:
   - base
-  - containers
 
 library:
   exposed-modules: WaterPouring
   source-dirs: src
+  dependencies:
+    - containers
+
+tests:
+  test:
+    main: Tests.hs
+    source-dirs: test
+    dependencies:
+      - water-pouring
+      - hspec

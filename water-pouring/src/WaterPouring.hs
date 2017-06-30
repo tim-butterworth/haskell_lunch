@@ -1,15 +1,15 @@
-module WaterPouring (solve) where
+module WaterPouring (solve, Move(..)) where
 
 import Data.Map (Map, fromList, toList, lookup, keys, insert, mapWithKey)
 import Data.Map.Lazy (adjust, elems)
 import Data.Maybe (fromJust)
 
 data Move = Fill Int | Empty Int | Pour Int Int
-  deriving(Show)
+  deriving(Show, Eq)
 
 -- 5 3
-solve :: [Int] -> Int -> [Move]
-solve buckets target = [] -- solveWithState buckets [0, 0] target
+solve :: [Int] -> Int -> Maybe [Move]
+solve buckets target = Nothing
 
 --solveWithState :: [Int] -> [Int] -> Int -> [Move]
 --solveWithState buckets currentValues target =
