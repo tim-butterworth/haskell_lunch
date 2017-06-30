@@ -2,9 +2,7 @@ module WaterPouring (solve) where
 
 import Data.Map (Map, fromList, toList, lookup, keys, insert)
 import Data.Map.Lazy (adjust)
-
 import Data.List (find)
-
 import Data.Set (Set, member, insert, fromList)
 
 data Move = Fill Integer | Empty Integer | Pour Integer Integer
