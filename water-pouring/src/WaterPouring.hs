@@ -1,4 +1,4 @@
-module WaterPouring (solve, Move(..)) where
+module WaterPouring (solve, Move(..), nextMoves, allPours) where
 
 import Data.Map (Map, fromList, toList, lookup, keys, insert, mapWithKey)
 import Data.Map.Lazy (adjust, elems)
@@ -7,7 +7,20 @@ import Data.Maybe (fromJust)
 data Move = Fill Int | Empty Int | Pour Int Int
   deriving(Show, Eq)
 
--- 5 3
+nextMoves' :: [Int] -> [Int] -> [Move]
+nextMoves' _ [] = []
+nextMoves' _ (b:[]) = [(Fill b), (Empty b)]
+nextMoves' acc (b:bs) = (nextMoves' [] [b]) ++ (nextMoves' [b] bs) ++ (allPours acc b)
+--nextMoves'  = (nextMoves' [] [b]) ++ (nextMoves' [b] bs) ++ (allPours acc b)
+
+
+allPours :: [Int] -> Int -> [Move]
+allPours [] _ = []
+allPours (b:bs) b' = [(Pour b b'), (Pour b' b)] ++ (allPours bs b')
+
+nextMoves :: [Int] -> [Move]
+nextMoves = nextMoves' []
+
 solve :: [Int] -> Int -> Maybe [Move]
 solve buckets target = Nothing
 
@@ -29,10 +42,10 @@ delta buckets (Pour s d) =
 solved :: Int -> Map Int Int -> Bool
 solved target state = elem target (elems state)
 
-possibleMoves = [(Fill 5), (Fill 3), (Empty 5), (Empty 3), (Pour 5 3), (Pour 3 5)]
 
-possibilities :: ((Map Int Int), [Move]) -> [((Map Int Int), [Move])]
-possibilities (state, movesSoFar) = map (\move -> ((delta state move), movesSoFar++[move])) possibleMoves
+
+--possibilities :: ((Map Int Int), [Move]) -> [((Map Int Int), [Move])]
+--possibilities (state, movesSoFar) = map (\move -> ((delta state move), movesSoFar++[move])) possibleMoves
 
 
 --Data.Map.fromList [(5, 2), (3, 0)]
