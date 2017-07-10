@@ -1,28 +1,30 @@
-module WaterPouring (solve, Move(..), nextMoves, allPours) where
+module WaterPouring (solve, Move(..), nextMoves) where
 
 import Data.Map (Map, fromList, toList, lookup, keys, insert, mapWithKey)
+import Data.List (delete)
 import Data.Map.Lazy (adjust, elems)
 import Data.Maybe (fromJust)
 
 data Move = Fill Int | Empty Int | Pour Int Int
   deriving(Show, Eq)
 
-nextMoves' :: [Int] -> [Int] -> [Move]
-nextMoves' _ [] = []
-nextMoves' _ (b:[]) = [(Fill b), (Empty b)]
-nextMoves' acc (b:bs) = (nextMoves' [] [b]) ++ (nextMoves' [b] bs) ++ (allPours acc b)
---nextMoves'  = (nextMoves' [] [b]) ++ (nextMoves' [b] bs) ++ (allPours acc b)
+emptyMoves :: [Int] -> [Move]
+emptyMoves = map (Empty)
 
+fillMoves :: [Int] -> [Move]
+fillMoves = map (Fill)
 
-allPours :: [Int] -> Int -> [Move]
-allPours [] _ = []
-allPours (b:bs) b' = [(Pour b b'), (Pour b' b)] ++ (allPours bs b')
+pourMoves :: [Int] -> [Move]
+pourMoves list = foldl (\acc x -> acc ++ (map (Pour x)) (delete x list) ) [] list
 
 nextMoves :: [Int] -> [Move]
-nextMoves = nextMoves' []
+nextMoves lst = (emptyMoves lst) ++ (fillMoves lst) ++ (pourMoves lst)
 
 solve :: [Int] -> Int -> Maybe [Move]
-solve buckets target = Nothing
+solve buckets target = find solved (nextMoves buckets)
+
+initialState:: [Int] -> Map Int Int
+initialState buckets = fromList (zip buckets (repeat 0))
 
 --solveWithState :: [Int] -> [Int] -> Int -> [Move]
 --solveWithState buckets currentValues target =
@@ -41,6 +43,7 @@ delta buckets (Pour s d) =
 
 solved :: Int -> Map Int Int -> Bool
 solved target state = elem target (elems state)
+
 
 
 
