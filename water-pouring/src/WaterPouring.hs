@@ -45,9 +45,9 @@ updateVisited visited [] = visited
 generations :: [Move] -> Set (Map Integer Integer) -> [((Map Integer Integer), [Move])] -> [((Map Integer Integer), [Move])]
 generations moves visited initial =
   let generation = nextGeneration moves visited initial
-  in generation ++ if (not (0 == (length generation)))
-                   then (generations moves (updateVisited visited generation) generation)
-                   else []
+  in generation ++ if (0 == (length generation))
+                   then []
+                   else (generations moves (updateVisited visited generation) generation)
 
 solutionState :: Integer -> ((Map Integer Integer), [Move]) -> Bool
 solutionState t (mp, moves) = containsTheValue t (toList mp)
