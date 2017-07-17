@@ -1,7 +1,7 @@
-module WaterPouring (solve, Move(..), nextMoves) where
+module WaterPouring (solve, Move(..), nextMoves, delta) where
 
 import Data.Map (Map, fromList, toList, lookup, keys, insert, mapWithKey)
-import Data.List (delete)
+import Data.List (find, delete)
 import Data.Map.Lazy (adjust, elems)
 import Data.Maybe (fromJust)
 
@@ -20,12 +20,15 @@ pourMoves list = foldl (\acc x -> acc ++ (map (Pour x)) (delete x list) ) [] lis
 nextMoves :: [Int] -> [Move]
 nextMoves lst = (emptyMoves lst) ++ (fillMoves lst) ++ (pourMoves lst)
 
-solve :: [Int] -> Int -> Maybe [Move]
-solve buckets target = find solved (nextMoves buckets)
-
 initialState:: [Int] -> Map Int Int
 initialState buckets = fromList (zip buckets (repeat 0))
 
+applyMove :: Map Int Int -> Move -> (Map Int Int, [Move])
+applyMove state move = ((delta state move), [move])
+
+solve :: [Int] -> Int -> Maybe [Move]
+solve buckets target = fmap snd (find (solvedTuple (solved target)) (map (applyMove (initialState buckets)) (nextMoves buckets)))
+  where solvedTuple isSolved (state, moves) = (isSolved state)
 --solveWithState :: [Int] -> [Int] -> Int -> [Move]
 --solveWithState buckets currentValues target =
 
@@ -44,7 +47,7 @@ delta buckets (Pour s d) =
 solved :: Int -> Map Int Int -> Bool
 solved target state = elem target (elems state)
 
-
+--foldl delta (initialState [3,5]) (take n [(Fill 3), (Pour 3 5), (Fill 3), (Pour 3 5), (Empty 5), (Pour 3 5), (Fill 3), (Pour 3 5)])
 
 
 --possibilities :: ((Map Int Int), [Move]) -> [((Map Int Int), [Move])]
