@@ -29,19 +29,40 @@ data ForthToken
   | Drop
   | Swap
   | Over
-  | InvalidToken
+  | UserDefined [Char]
   deriving (Show, Eq)
 
-data ForthState = Push ForthToken ForthState | Empty
+data ForthStack = Push ForthToken ForthStack | Empty
   deriving (Show, Eq)
 
-data ReaderState = Done | Reading | Break
+data FunctionSpaceMode = Reading | Writing
+  deriving (Show, Eq)
+
+data UserDefinedFunction = Fun (ForthStack -> Either ForthError ForthStack)
+  deriving (Show, Eq)
+
+data FunctionSpace = FunSpace ([ForthToken, UserDefinedFunction], FunctionSpaceMode)
+  deriving (Show, Eq)
+
+data ForthState = State (ForthStack, FunctionSpace)
+  deriving (Show, Eq)
+--data ForthState = Push ForthToken ForthState
+--  | Empty
+--  deriving (Show, Eq)
+
+data ReaderState = Done
+  | Reading
+  | Break
   deriving (Show)
 
-validChars = ['0'..'9'] ++ ['a'..'z'] ++ ['+', '-', '*', '/'] ++ ['A'..'Z']
+push :: ForthToken -> ForthStack -> ForthStack
+push token stack = Push token stack
 
-empty :: ForthState
-empty = Empty
+pop :: ForthStack -> Maybe (ForthToken, ForthStack)
+pop Empty = Nothing
+pop (Push token stack) = Just (token, stack)
+
+validChars = ['0'..'9'] ++ ['a'..'z'] ++ ['+', '-', '*', '/'] ++ ['A'..'Z']
 
 hasDepth :: Int -> ForthState -> Bool
 hasDepth 0 _ = True
@@ -53,12 +74,14 @@ sufficientlyDeep v stack = successOrFailure (hasDepth v stack) stack
   where successOrFailure True s = Right s
         successOrFailure False _ = Left StackUnderflow
 
-stackBinaryOp :: (Int -> Int -> Int) -> ForthState -> Either ForthError ForthState
-stackBinaryOp op (Push (Num a) (Push (Num b) s)) = Right (Push (Num (op b a)) s)
-stackBinaryOp _ _ = Left StackUnderflow
+nonZeroDivisor :: ForthState -> Either ForthError ForthState
+nonZeroDivisor (Push (Num 0) (Push (Num b) s)) = Left DivisionByZero
+nonZeroDivisor stack = Right stack
 
-divide :: ForthState -> Either ForthError ForthState
-divide (Push (Num 0) (Push (Num b) s)) = Left DivisionByZero
+stackBinaryOp :: (Int -> Int -> Int) -> ForthState -> ForthState
+stackBinaryOp op (Push (Num a) (Push (Num b) s)) = (Push (Num (op b a)) s)
+
+divide :: ForthState -> ForthState
 divide stack = stackBinaryOp (div) stack
  
 duplicateLast :: ForthState -> Either ForthError ForthState
@@ -66,12 +89,6 @@ duplicateLast Empty = Left StackUnderflow
 duplicateLast stack =
   let (Push token s) = stack
   in Right (Push token stack)
-
--- stackDropLast :: ForthState -> ForthState
--- stackDropLast (Push token remainder) = Right remainder
--- 
--- dropLast :: ForthState -> Either ForthError ForthState
--- dropLast stack = (validStack stack ((flip exceedesMinDepth) ))
 
 dropLast :: ForthState -> Either ForthError ForthState
 dropLast (Push token remainder) = Right remainder
@@ -90,10 +107,10 @@ over stack =
   
 asToken :: [Char] -> ForthToken
 asToken tokenStr = findMatch (map toLower tokenStr)
-  where findMatch ['+'] = Plus
-        findMatch ['-'] = Minus
-        findMatch ['*'] = Times
-        findMatch ['/'] = Divide
+  where findMatch "+" = Plus
+        findMatch "-" = Minus
+        findMatch "*" = Times
+        findMatch "/" = Divide
         findMatch "dup" = Dup
         findMatch "drop" = Drop
         findMatch "swap" = Swap
@@ -101,10 +118,7 @@ asToken tokenStr = findMatch (map toLower tokenStr)
         findMatch lst =
           if (all (\x -> (elem x ['0'..'9'])) lst)
           then (Num (read lst :: Int))
-          else InvalidToken
-
-update :: [Char] -> Char -> [Char]
-update accume v = accume ++ [v]
+          else UserDefined lst
 
 mergeReads :: [Char] -> Maybe (Char, Text) -> ([Char], Maybe Text, ReaderState)
 mergeReads accume Nothing = (accume, Nothing, Done)
@@ -112,28 +126,30 @@ mergeReads accume (Just (c, txt)) = if (elem c validChars)
                                     then (accume ++ [c], (Just txt), Reading)
                                     else (accume, (Just txt), Break)
 
-nextToken :: Text -> (ForthToken, (Maybe Text))
+nextToken :: Text -> ([Char], (Maybe Text))
 nextToken txt = extractToken ([], (Just txt), Reading)
-  where extractToken (accume, _, Done) = ((asToken accume), Nothing)
-        extractToken (accume, txt, Break) = ((asToken accume), txt)
+  where extractToken (accume, _, Done) = (accume, Nothing)
+        extractToken (accume, txt, Break) = (accume, txt)
         extractToken (accume, (Just txt), Reading) = extractToken (mergeReads accume (uncons txt))
 
-updateStack :: ForthToken -> ForthState -> Either ForthError ForthState
-updateStack Plus stack = stackBinaryOp (+) stack
-updateStack Minus stack = stackBinaryOp (-) stack
-updateStack Times stack = stackBinaryOp (*) stack
-updateStack Divide stack = divide stack
-updateStack Dup stack = duplicateLast stack
-updateStack Drop stack = dropLast stack
-updateStack Swap stack = swapLastTwo stack
-updateStack Over stack = over stack
-updateStack token stack = Right (Push token stack)
+updateStack :: [ForthToken] -> ForthState -> Either ForthError ForthState
+updateStack (Plus:ts) stack = (>>=) (fmap (stackBinaryOp (+)) (sufficientlyDeep 2 stack)) (updateStack ts)
+updateStack (Minus:ts) stack = (>>=) (fmap (stackBinaryOp (-)) (sufficientlyDeep 2 stack)) (updateStack ts)
+updateStack (Times:ts) stack = (>>=) (fmap (stackBinaryOp (*)) (sufficientlyDeep 2 stack)) (updateStack ts)
+updateStack (Divide:ts) stack = (>>=) (fmap divide ((>>=) (sufficientlyDeep 2 stack) nonZeroDivisor)) (updateStack ts)
+updateStack (Dup:ts) stack = (>>=) (duplicateLast stack) (updateStack ts)
+updateStack (Drop:ts) stack = (>>=) (dropLast stack) (updateStack ts)
+updateStack (Swap:ts) stack = (>>=) (swapLastTwo stack) (updateStack ts)
+updateStack (Over:ts) stack = (>>=) (over stack) (updateStack ts)
+updateStack (token:ts) stack = (>>=) (Right (Push token stack)) (updateStack ts)
+updateStack [] stack = Right stack
 
-evalText' :: (ForthToken, (Maybe Text)) -> ForthState -> Either ForthError ForthState
-evalText' (token, Nothing) stack = updateStack token stack
-evalText' (token, (Just txt)) stack = proceed txt (updateStack token stack)
-  where proceed txt (Left e) = Left e
-        proceed txt (Right stack) = evalText' (nextToken txt) stack
+evalText' :: ([Char], (Maybe Text)) -> ForthState -> Either ForthError ForthState
+evalText' (str, Nothing) stack = updateStack [(asToken str)] stack
+evalText' (str, (Just txt)) stack = (>>=) (updateStack [(asToken str)] stack) (evalText' (nextToken txt))
+
+empty :: ForthState
+empty = Empty
 
 evalText :: Text -> ForthState -> Either ForthError ForthState
 evalText txt stack = evalText' (nextToken txt) stack
@@ -141,15 +157,3 @@ evalText txt stack = evalText' (nextToken txt) stack
 toList :: ForthState -> [Int]
 toList (Push (Num n) stack) = (toList stack) ++ [n]
 toList Empty = []
-
--- (>>=) (Right 3) (\x -> (Right (x + 7))) = Right 10
--- (>>=) (nextToken text) updateStack
-
--- validate (Either) -> transform
--- validate :: [(Stack -> Either)]
--- 
--- validStack :: ForthState -> (ForthState -> Bool) -> (ForthState -> ForthState) -> Either ForthError ForthState
--- validStack stack validator op =
---   if (validator stack)
---   then Right stack
---   else Left StackUnderflow
