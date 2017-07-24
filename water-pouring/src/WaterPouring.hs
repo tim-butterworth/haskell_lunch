@@ -26,11 +26,26 @@ initialState buckets = fromList (zip buckets (repeat 0))
 applyMove :: Map Int Int -> Move -> (Map Int Int, [Move])
 applyMove state move = ((delta state move), [move])
 
-solve :: [Int] -> Int -> Maybe [Move]
-solve buckets target = fmap snd (find (solvedTuple (solved target)) (map (applyMove (initialState buckets)) (nextMoves buckets)))
-  where solvedTuple isSolved (state, moves) = (isSolved state)
+applyAllMoves :: Map Int Int -> [Move] -> (Map Int Int)
+applyAllMoves state moves = foldl delta state moves
+
+-- solve :: [Int] -> Int -> Maybe [Move]
+-- solve buckets target = fmap snd (find (solvedTuple (solved target)) (map (applyMove (initialState buckets)) (nextMoves buckets)))
+--   where solvedTuple isSolved (state, moves) = (isSolved state)
 --solveWithState :: [Int] -> [Int] -> Int -> [Move]
 --solveWithState buckets currentValues target =
+
+solve :: [Int] -> Int -> Maybe [Move]
+solve buckets target = find (\moves -> solved target (applyAllMoves initial moves)) (infinite buckets 1)
+	where initial = initialState buckets
+
+infinite' :: [Int] -> Int -> [[Move]]
+infinite' buckets 1 = fmap (\x -> [x]) (nextMoves buckets)
+infinite' buckets depth = [ x : y | x <- nextMoves buckets, y <- (infinite' buckets (depth - 1)) ]
+
+infinite :: [Int] -> Int -> [[Move]]
+infinite buckets 10 = []
+infinite buckets n = (infinite' buckets n) ++ (infinite buckets (n + 1))
 
 delta :: Map Int Int -> Move -> Map Int Int
 delta buckets (Fill n) = adjust (\_ -> n) n buckets

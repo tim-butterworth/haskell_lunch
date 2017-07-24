@@ -14,7 +14,7 @@ specs = describe "solve should solve the water problem" $ do
       it "will return 'Nothing' if the list of buckets is empty" $ do
         (solve [] 9) `shouldBe` Nothing
 
-      xit "will return an empty list of moves if there is not solution" $ do
+      it "will return an empty list of moves if there is not solution" $ do
         (solve [4, 12] 2) `shouldBe` Nothing
 
     context "solvable puzzles" $ do
@@ -22,8 +22,11 @@ specs = describe "solve should solve the water problem" $ do
       it "solves the simplest puzzle" $ do
         (solve [9] 9) `shouldBe` Just [(Fill 9)]
 
+      it "solves a simple puzzle" $ do
+        (solve [5, 3] 2) `shouldBe` Just [(Fill 5), (Pour 5 3)]
+
       it "solves the movie puzzle" $ do
-        (solve [5, 3] 4) `shouldBe` Just [(Fill 3), (Pour 3 5), (Fill 3), (Pour 3 5), (Empty 5), (Pour 3 5), (Fill 3), (Pour 3 5)]
+        (solve [5, 3] 4) `shouldBe` Just [Fill 5,Pour 5 3,Empty 3,Pour 5 3,Fill 5,Pour 5 3]
 
     context "#nextMoves" $ do
 
