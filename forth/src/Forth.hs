@@ -13,22 +13,14 @@ import Data.Text (Text, uncons, pack)
 import Data.Char (toLower)
 import Data.List (find)
 
-data ForthError
-     = DivisionByZero
-     | StackUnderflow
-     | InvalidWord
-     | UnknownWord Text
+data ForthError = DivisionByZero | StackUnderflow | InvalidWord | UnknownWord Text
      deriving (Show, Eq)
 
-data ForthToken
-  = Num Int
+data ForthToken = Num Int
   | Plus
   | Minus
   | Times
   | Divide
-  | Dup
-  | Drop
-  | Over
   | StartDefiningFun
   | FinishDefiningFun
   | UserDefined [Char]
@@ -44,17 +36,8 @@ data Functions = FunSpace [(ForthToken, (Functions -> ForthStack -> (Either Fort
 
 data ForthState = State (ForthStack, Functions, ForthMode)
 
-data ReaderState = Done
-  | Reading
-  | Break
+data ReaderState = Done | Reading | Break
   deriving (Show, Eq)
-
-push :: ForthToken -> ForthStack -> ForthStack
-push token stack = Push token stack
-
-pop :: ForthStack -> Maybe (ForthToken, ForthStack)
-pop Empty = Nothing
-pop (Push token stack) = Just (token, stack)
 
 validChars = ['0'..'9'] ++ ['a'..'z'] ++ ['+', '-', '*', '/', ':', ';'] ++ ['A'..'Z']
 
@@ -101,15 +84,8 @@ over stack =
   
 asToken :: [Char] -> ForthToken
 asToken tokenStr = findMatch (map toLower tokenStr)
-  where findMatch "+" = Plus
-        findMatch "-" = Minus
-        findMatch "*" = Times
-        findMatch "/" = Divide
-        findMatch "dup" = Dup
-        findMatch "drop" = Drop
-        findMatch "over" = Over
-        findMatch ":" = StartDefiningFun
-        findMatch ";" = FinishDefiningFun
+  where findMatch ":" = StartDefiningFun
+        findMatch ";" = FinishDefiningFun        
         findMatch lst =
           if (all (\x -> (elem x ['0'..'9'])) lst)
           then (Num (read lst :: Int))
@@ -136,14 +112,6 @@ applyUserDefinedFunction token (FunSpace funs) stack = fromJust ((fmap (applyFun
         fromJust (Just a) = a
 
 updateStack :: ForthToken -> Functions -> ForthStack -> Either ForthError ForthStack
-updateStack Plus _ stack = (fmap (stackBinaryOp (+)) (sufficientlyDeep 2 stack))
-updateStack Minus _ stack = (fmap (stackBinaryOp (-)) (sufficientlyDeep 2 stack))
-updateStack Times _ stack = (fmap (stackBinaryOp (*)) (sufficientlyDeep 2 stack))
-updateStack Divide _ stack = (fmap divide ((>>=) (sufficientlyDeep 2 stack) nonZeroDivisor))
-updateStack Dup _ stack = (duplicateLast stack)
-updateStack Drop _ stack = (dropLast stack)
-updateStack (UserDefined "swap") _ stack = (swapLastTwo stack)
-updateStack Over _ stack = (over stack)
 updateStack (Num n) _ stack = Right (Push (Num n) stack)
 updateStack userDefined functions stack = (applyUserDefinedFunction userDefined functions stack)
 
@@ -175,19 +143,33 @@ updateState FinishDefiningFun (State (stack, funSp, mode)) = fmap ((flip ((flip 
 updateState token (State (stack, funSp, (Recording funStack))) = Right (assembleState funSp (updateRecording token funStack) stack)
 updateState token (State (stack, funSp, Execute)) = fmap (assembleState funSp Execute) (updateStack token funSp stack)
 
+predefinedFun :: String -> (ForthStack -> Either ForthError ForthStack) -> (ForthToken, (Functions -> ForthStack -> Either ForthError ForthStack))
+predefinedFun name fun = ((UserDefined name), (\_ -> fun))
+
+predefinedFuns :: Functions
+predefinedFuns = FunSpace [
+  (predefinedFun "swap" swapLastTwo)
+  ,(predefinedFun "over" over)
+  ,(predefinedFun "dup" duplicateLast)
+  ,(predefinedFun "drop" dropLast)
+  ,(predefinedFun "+" (\stack -> (fmap (stackBinaryOp (+)) (sufficientlyDeep 2 stack))))
+  ,(predefinedFun "-" (\stack -> (fmap (stackBinaryOp (-)) (sufficientlyDeep 2 stack))))
+  ,(predefinedFun "/" (\stack -> (fmap divide ((>>=) (sufficientlyDeep 2 stack) nonZeroDivisor))))
+  ,(predefinedFun "*" (\stack -> (fmap (stackBinaryOp (*)) (sufficientlyDeep 2 stack))))
+  ]
+
+empty :: ForthState
+empty = State (Empty, predefinedFuns, Execute)
+
 evalText' :: ([Char], (Maybe Text)) -> ForthState -> Either ForthError ForthState
 evalText' (str, Nothing) stack = updateState (asToken str) stack
 evalText' (str, (Just txt)) stack = (>>=) (updateState (asToken str) stack) (evalText' (nextToken txt))
-
-empty :: ForthState
-empty = State (Empty, (FunSpace [((UserDefined "swap"), (\_ -> swapLastTwo))]), Execute)
 
 evalText :: Text -> ForthState -> Either ForthError ForthState
 evalText txt state = evalText' (nextToken txt) state
 
 toList' :: ForthStack -> [Int]
 toList' (Push (Num n) stack) = (toList' stack) ++ [n]
-toList' (Push (UserDefined n) stack) = error ("invalid token type in stack" ++ n)
 toList' Empty = []
 
 toList :: ForthState -> [Int]
