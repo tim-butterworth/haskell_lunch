@@ -17,10 +17,6 @@ data ForthError = DivisionByZero | StackUnderflow | InvalidWord | UnknownWord Te
      deriving (Show, Eq)
 
 data ForthToken = Num Int
-  | Plus
-  | Minus
-  | Times
-  | Divide
   | StartDefiningFun
   | FinishDefiningFun
   | UserDefined [Char]
@@ -103,9 +99,6 @@ nextToken txt = extractToken ([], (Just txt), Reading)
         extractToken (accume, txt, Break) = (accume, txt)
         extractToken (accume, (Just txt), Reading) = extractToken (mergeReads accume (uncons txt))
 
-assembleState :: Functions -> ForthMode -> ForthStack -> ForthState
-assembleState funs mode stack = State (stack, funs, mode)
-
 applyUserDefinedFunction :: ForthToken -> Functions -> ForthStack -> Either ForthError ForthStack
 applyUserDefinedFunction token (FunSpace funs) stack = fromJust ((fmap (applyFun (FunSpace funs) stack)) (fmap (\(name, fun) -> fun) (find (\(name, stack) -> token == name) funs)))
   where applyFun funSp stack fun = fun funSp stack
@@ -130,12 +123,18 @@ funWrapUserDefined funStack funs stateStack = applyMovesFromStack funs funStack 
   where applyMovesFromStack funSpace (Push token funStack) stack = (>>=) (updateStack token funSpace stack) (applyMovesFromStack funSpace funStack)
         applyMovesFromStack funSpace Empty stack = Right stack
 
-createUserDefinedFun :: ForthStack -> (ForthToken, (Functions -> ForthStack -> (Either ForthError ForthStack)))
-createUserDefinedFun stack = (top, (funWrapUserDefined actions))
+createUserDefinedFun :: ForthStack -> Either ForthError (ForthToken, (Functions -> ForthStack -> (Either ForthError ForthStack)))
+createUserDefinedFun stack = validateFun (top, (funWrapUserDefined actions))
   where (Push top actions) = invertStack stack
+        validateFun ((Num n), _) = Left InvalidWord
+        validateFun validFun = Right validFun
 
 updateUserDefinedFuns :: ForthMode -> Functions -> Either ForthError Functions
-updateUserDefinedFuns (Recording stack) (FunSpace funs) = Right (FunSpace ((createUserDefinedFun stack):funs))
+updateUserDefinedFuns (Recording stack) (FunSpace funs) = fmap (prependFunction funs) (createUserDefinedFun stack)
+  where prependFunction funs newFun = (FunSpace (newFun:funs))
+
+assembleState :: Functions -> ForthMode -> ForthStack -> ForthState
+assembleState funs mode stack = State (stack, funs, mode)
 
 updateState :: ForthToken -> ForthState -> Either ForthError ForthState
 updateState StartDefiningFun (State (stack, funSp, Execute)) = Right (State (stack, funSp, (Recording Empty)))
@@ -143,19 +142,19 @@ updateState FinishDefiningFun (State (stack, funSp, mode)) = fmap ((flip ((flip 
 updateState token (State (stack, funSp, (Recording funStack))) = Right (assembleState funSp (updateRecording token funStack) stack)
 updateState token (State (stack, funSp, Execute)) = fmap (assembleState funSp Execute) (updateStack token funSp stack)
 
-predefinedFun :: String -> (ForthStack -> Either ForthError ForthStack) -> (ForthToken, (Functions -> ForthStack -> Either ForthError ForthStack))
-predefinedFun name fun = ((UserDefined name), (\_ -> fun))
+simpleOp :: String -> (ForthStack -> Either ForthError ForthStack) -> (ForthToken, (Functions -> ForthStack -> Either ForthError ForthStack))
+simpleOp name fun = ((UserDefined name), (\_ -> fun))
 
 predefinedFuns :: Functions
 predefinedFuns = FunSpace [
-  (predefinedFun "swap" swapLastTwo)
-  ,(predefinedFun "over" over)
-  ,(predefinedFun "dup" duplicateLast)
-  ,(predefinedFun "drop" dropLast)
-  ,(predefinedFun "+" (\stack -> (fmap (stackBinaryOp (+)) (sufficientlyDeep 2 stack))))
-  ,(predefinedFun "-" (\stack -> (fmap (stackBinaryOp (-)) (sufficientlyDeep 2 stack))))
-  ,(predefinedFun "/" (\stack -> (fmap divide ((>>=) (sufficientlyDeep 2 stack) nonZeroDivisor))))
-  ,(predefinedFun "*" (\stack -> (fmap (stackBinaryOp (*)) (sufficientlyDeep 2 stack))))
+  (simpleOp "swap" swapLastTwo)
+  ,(simpleOp "over" over)
+  ,(simpleOp "dup" duplicateLast)
+  ,(simpleOp "drop" dropLast)
+  ,(simpleOp "+" (\stack -> (fmap (stackBinaryOp (+)) (sufficientlyDeep 2 stack))))
+  ,(simpleOp "-" (\stack -> (fmap (stackBinaryOp (-)) (sufficientlyDeep 2 stack))))
+  ,(simpleOp "/" (\stack -> (fmap divide ((>>=) (sufficientlyDeep 2 stack) nonZeroDivisor))))
+  ,(simpleOp "*" (\stack -> (fmap (stackBinaryOp (*)) (sufficientlyDeep 2 stack))))
   ]
 
 empty :: ForthState
