@@ -100,8 +100,11 @@ nextToken txt = extractToken ([], (Just txt), Reading)
         extractToken (accume, (Just txt), Reading) = extractToken (mergeReads accume (uncons txt))
 
 applyUserDefinedFunction :: ForthToken -> Functions -> ForthStack -> Either ForthError ForthStack
-applyUserDefinedFunction token (FunSpace funs) stack = fromJust ((fmap (applyFun (FunSpace funs) stack)) (fmap (\(name, fun) -> fun) (find (\(name, stack) -> token == name) funs)))
+applyUserDefinedFunction token (FunSpace funs) stack = fromJust ((fmap (applyFun (FunSpace funs) stack)) (fmap snd (findTheFun token funs)))
   where applyFun funSp stack fun = fun funSp stack
+        findTheFun token funs = find (matchingFun token) funs
+        matchingFun token (name, stack) = name == token
+        fromJust Nothing = Left StackUnderflow
         fromJust (Just a) = a
 
 updateStack :: ForthToken -> Functions -> ForthStack -> Either ForthError ForthStack
