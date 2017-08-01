@@ -13,7 +13,7 @@ import Data.Text (Text, uncons, pack)
 import Data.Char (toLower)
 import Data.List (find)
 
-data ForthError = DivisionByZero | StackUnderflow | InvalidWord | UnknownWord Text
+data ForthError = DivisionByZero | StackUnderflow | InvalidWord | UnknownWord [Char]
      deriving (Show, Eq)
 
 data ForthToken = Num Int
@@ -100,12 +100,12 @@ nextToken txt = extractToken ([], (Just txt), Reading)
         extractToken (accume, (Just txt), Reading) = extractToken (mergeReads accume (uncons txt))
 
 applyUserDefinedFunction :: ForthToken -> Functions -> ForthStack -> Either ForthError ForthStack
-applyUserDefinedFunction token (FunSpace funs) stack = fromJust ((fmap (applyFun (FunSpace funs) stack)) (fmap snd (findTheFun token funs)))
+applyUserDefinedFunction token (FunSpace funs) stack = ((>>=) (findTheFun token funs) (applyFun (FunSpace funs) stack))
   where applyFun funSp stack fun = fun funSp stack
-        findTheFun token funs = find (matchingFun token) funs
+        findTheFun token funs = fromJust token (fmap snd (find (matchingFun token) funs))
         matchingFun token (name, stack) = name == token
-        fromJust Nothing = Left StackUnderflow
-        fromJust (Just a) = a
+        fromJust (UserDefined name) Nothing = Left (UnknownWord name)
+        fromJust _ (Just a) = Right a
 
 updateStack :: ForthToken -> Functions -> ForthStack -> Either ForthError ForthStack
 updateStack (Num n) _ stack = Right (Push (Num n) stack)
