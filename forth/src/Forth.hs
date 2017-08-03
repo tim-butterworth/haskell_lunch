@@ -99,8 +99,8 @@ nextToken txt = extractToken ([], (Just txt), Reading)
         extractToken (accume, txt, Break) = (accume, txt)
         extractToken (accume, (Just txt), Reading) = extractToken (mergeReads accume (uncons txt))
 
-applyUserDefinedFunction :: ForthToken -> Functions -> ForthStack -> Either ForthError ForthStack
-applyUserDefinedFunction token (FunSpace funs) stack = ((>>=) (findTheFun token funs) (applyFun (FunSpace funs) stack))
+applyDefinedFunction :: ForthToken -> Functions -> ForthStack -> Either ForthError ForthStack
+applyDefinedFunction token (FunSpace funs) stack = ((>>=) (findTheFun token funs) (applyFun (FunSpace funs) stack))
   where applyFun funSp stack fun = fun funSp stack
         findTheFun token funs = fromJust token (fmap snd (find (matchingFun token) funs))
         matchingFun token (name, stack) = name == token
@@ -109,7 +109,7 @@ applyUserDefinedFunction token (FunSpace funs) stack = ((>>=) (findTheFun token 
 
 updateStack :: ForthToken -> Functions -> ForthStack -> Either ForthError ForthStack
 updateStack (Num n) _ stack = Right (Push (Num n) stack)
-updateStack userDefined functions stack = (applyUserDefinedFunction userDefined functions stack)
+updateStack userDefined functions stack = (applyDefinedFunction userDefined functions stack)
 
 updateRecording :: ForthToken -> ForthStack -> ForthMode
 updateRecording token stack = (Recording (Push token stack))
